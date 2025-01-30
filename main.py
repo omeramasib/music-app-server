@@ -1,19 +1,11 @@
-from fastapi import FastAPI, Request
-from pydantic import BaseModel
-from sqlalchemy import VARCHAR, Column, TEXT, LargeBinary, create_engine
-from sqlalchemy.orm import sessionmaker
+from fastapi import FastAPI, HTTPException, Request
+from sqlalchemy import VARCHAR, Column, TEXT, LargeBinary
 from sqlalchemy.ext.declarative import declarative_base
+from . import database
+import uuid
+import bcrypt
 
 app = FastAPI()
-
-DATABASE_URL = "postgresql://postgres:password123@localhost:5432/musicapp"
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit= False, autoflush= False, bind= engine)
-db = SessionLocal()
-class UserCreate(BaseModel):
-    username: str
-    email: str
-    password: str
 
 Base = declarative_base()
 
@@ -25,11 +17,21 @@ class User(Base):
     email = Column(VARCHAR(100))
     password = Column(LargeBinary)
 
+database.Base.metadata.create_all(bind=database.engine)
 
-Base.metadata.create_all(bind=engine)
+
+
 @app.post('/singup')
 def singup_user(user: UserCreate):
-    user_db = db.query(User).filter(User.email == user.email).first()
+    user_db = database.db.query(User).filter(User.email == user.email).first()
 
     if user_db:
-        return "User already exists"
+        raise HTTPException(400, "User already exists")
+    hashed_pw = bcrypt.hashpw(user.password.encode(), bcrypt.gensalt())
+    user_db = User(id=str(uuid.uuid4()), email=user.email, password= hashed_pw, name= user.name)
+    database.db.add(user_db)
+    database.db.commit()
+    database.db.refresh(user_db)
+
+    return user_db
+    
